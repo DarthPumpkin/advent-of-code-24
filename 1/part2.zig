@@ -21,7 +21,7 @@ fn solve(alloc: std.mem.Allocator, input_str: []const u8) !Number {
         try list1.append(num1);
         try list2.append(num2);
     }
-    std.debug.print("Parsed:\n{any}\n{any}\n", .{ list1.items, list2.items });
+    debugPrintLn("Parsed:\n{any}\n{any}", .{ list1.items, list2.items });
 
     // How many times each left number occurs in the right list
     var counts = std.hash_map.AutoHashMap(Number, Number).init(alloc);
@@ -48,7 +48,7 @@ fn solve(alloc: std.mem.Allocator, input_str: []const u8) !Number {
         const maybe_count = counts.get(left_num);
         if (maybe_count) |count| {
             sum += left_num * count;
-            std.debug.print("{d}: {d}\n", .{ left_num, count });
+            debugPrintLn("{d}: {d}", .{ left_num, count });
         }
     }
     return sum;
@@ -56,6 +56,10 @@ fn solve(alloc: std.mem.Allocator, input_str: []const u8) !Number {
 
 fn absDiff(x: anytype, y: anytype) @TypeOf(x + y) {
     return if (x > y) x - y else y - x;
+}
+
+fn debugPrintLn(comptime fmt: []const u8, args: anytype) void {
+    std.debug.print(fmt ++ "\n", args);
 }
 
 fn printLn(comptime fmt: []const u8, args: anytype) !void {
@@ -82,7 +86,7 @@ test "Example" {
     defer alloc.free(fileContent);
 
     const sum = try solve(alloc, fileContent);
-    std.debug.print("Example answer: {d}\n", .{sum});
+    debugPrintLn("Example answer: {d}", .{sum});
 
     try expect(sum == 31);
 }
