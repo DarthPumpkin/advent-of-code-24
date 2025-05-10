@@ -82,6 +82,10 @@ const ReportResult = union(enum) {
     invalid: usize,
 };
 
+// Re-use from Day 1
+/// Absolute difference between two numbers.
+/// Returns unsigned integer if inputs are unsigned integers.
+/// Signed if inputs are signed.
 fn absDiff(x: anytype, y: anytype) @TypeOf(x + y) {
     return if (x > y) x - y else y - x;
 }
@@ -98,7 +102,10 @@ fn printLn(comptime fmt: []const u8, args: anytype) !void {
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const alloc = gpa.allocator();
-    defer _ = gpa.deinit();
+    defer {
+        const deinit_status = gpa.deinit();
+        debugPrintLn("Memory check: {any}", .{deinit_status});
+    }
 
     const fileContent = try std.fs.cwd().readFileAlloc(alloc, "input.txt", max_size);
     defer alloc.free(fileContent);
