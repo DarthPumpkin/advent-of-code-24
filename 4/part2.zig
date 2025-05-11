@@ -21,7 +21,7 @@ fn solve(_: std.mem.Allocator, input_str: []const u8) !Number {
     debugPrintLn("{any}", .{index});
 
     var sum: Number = 0;
-    var patches = Patches.init(index);
+    var patches = Patches.init(index, 3, 3);
     while (patches.next()) |patch| {
         // Check diagonal (down-right)
         // Check forward
@@ -99,12 +99,11 @@ const Patches = struct {
     index: Index2D,
     patch_rows: usize,
     patch_cols: usize,
-    // buffer: *[]const u8,
     next_i: usize,
     next_j: usize,
 
-    fn init(index: Index2D) Patches {
-        return .{ .index = index, .patch_rows = 3, .patch_cols = 3, .next_i = 0, .next_j = 0 };
+    fn init(index: Index2D, height: usize, width: usize) Patches {
+        return .{ .index = index, .patch_rows = height, .patch_cols = width, .next_i = 0, .next_j = 0 };
     }
 
     fn next(self: *Patches) ?Index2D {
@@ -160,13 +159,7 @@ test "Patches" {
     const expected_num_patches = 6;
 
     var actual_num_patches: usize = 0;
-    var patches = Patches{
-        .index = index,
-        .patch_cols = 2,
-        .patch_rows = 2,
-        .next_i = 0,
-        .next_j = 0,
-    };
+    var patches = Patches.init(index, 2, 2);
     while (patches.next()) |_| {
         actual_num_patches += 1;
     }
