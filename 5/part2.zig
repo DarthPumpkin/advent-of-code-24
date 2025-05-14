@@ -14,13 +14,13 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []const u8) !Solution {
     const rules_str = splits.next().?;
     const updates_str = splits.next().?;
     // Parse rules
-    var rules_map = std.hash_map.AutoHashMap(Page, std.ArrayList(Page)).init(alloc);
+    var rules = std.hash_map.AutoHashMap(Page, std.ArrayList(Page)).init(alloc);
     var rules_splits = std.mem.tokenizeAny(u8, rules_str, "\r\n");
     while (rules_splits.next()) |rule_str| {
         var rule_parts = std.mem.splitScalar(u8, rule_str, '|');
         const from = try std.fmt.parseUnsigned(Page, rule_parts.next().?, 0);
         const to = try std.fmt.parseUnsigned(Page, rule_parts.next().?, 0);
-        const entry = try rules_map.getOrPut(from);
+        const entry = try rules.getOrPut(from);
         if (entry.found_existing) {
             try entry.value_ptr.*.append(to);
         } else {
@@ -29,27 +29,22 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []const u8) !Solution {
             entry.value_ptr.* = new_list;
         }
     }
-
     // Find invalid sequences
     var sum: Solution = 0;
     var update_splits = std.mem.tokenizeAny(u8, updates_str, "\r\n");
-    var pages_so_far = std.ArrayList(u8).init(alloc); // re-use
-    defer pages_so_far.deinit();
+    var fbal = FixedBufferArrayList(Page, 100).init();
     while (update_splits.next()) |update_str| {
-        pages_so_far.clearRetainingCapacity();
+        var pages_so_far = fbal.arrayList(); // re-use buffer
         var page_splits = std.mem.splitScalar(u8, update_str, ',');
         var valid = true;
         while (page_splits.next()) |page_str| {
             const page = try std.fmt.parseUnsigned(u8, page_str, 0);
             // Check order
-            if (rules_map.get(page)) |successors| {
+            if (rules.get(page)) |successors| {
                 for (pages_so_far.items) |prev_page| {
                     for (successors.items) |s| {
                         if (s == prev_page) {
                             valid = false;
-                            // debugPrintLn("{any}", .{pages_so_far.items});
-                            // debugPrintLn("Invalid: {d}|{d}", .{ page, prev_page });
-                            // break :update;
                         }
                     }
                 }
@@ -60,8 +55,10 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []const u8) !Solution {
             const report = pages_so_far.items;
             debugPrintLn("Invalid: {any}", .{report});
             // Sort update topologically
-            var subgraph_ = try subgraph(rules_map, report);
-            const sorted = try topologicalSort(alloc, &subgraph_);
+            var buffer: [100]u8 = undefined;
+            var fba = std.heap.FixedBufferAllocator.init(&buffer);
+            var subgraph_ = try subgraph(&rules, report);
+            const sorted = try topologicalSort(fba.allocator(), &subgraph_);
             const lessThan = struct {
                 pub fn lessThanContext(context: []Page, p1: Page, p2: Page) bool {
                     const i1_ = std.mem.indexOfScalar(Page, context, p1).?;
@@ -69,7 +66,7 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []const u8) !Solution {
                     return i1_ < i2_;
                 }
             }.lessThanContext;
-            std.mem.sortUnstable(Page, report, sorted.items, lessThan);
+            std.mem.sortUnstable(Page, report, sorted, lessThan);
             debugPrintLn("Fixed: {any}", .{report});
             const middle_idx = report.len / 2;
             sum += report[middle_idx];
@@ -78,8 +75,9 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []const u8) !Solution {
     return sum;
 }
 
-fn topologicalSort(alloc: std.mem.Allocator, dag: *std.hash_map.AutoHashMap(Page, std.ArrayList(Page))) !std.ArrayList(Page) {
-    // Kahn's algorithm: repeatedly remove pages that don't have successors
+// Kahn's algorithm: repeatedly remove pages from the DAG that don't have successors
+// Allocates exactly 100 Bytes.
+fn topologicalSort(alloc: std.mem.Allocator, dag: *std.hash_map.AutoHashMap(Page, std.ArrayList(Page))) ![]Page {
     var no_outgoing_edges = std.bit_set.ArrayBitSet(u64, 100).initEmpty();
     for (0..100) |page_| {
         const page = @as(Page, @intCast(page_));
@@ -87,7 +85,7 @@ fn topologicalSort(alloc: std.mem.Allocator, dag: *std.hash_map.AutoHashMap(Page
             no_outgoing_edges.set(page);
         }
     }
-    // debugPrintLn("", .{});
+
     var sorted = try std.ArrayList(Page).initCapacity(alloc, 100);
     while (no_outgoing_edges.findFirstSet()) |page_to_| {
         no_outgoing_edges.unset(page_to_);
@@ -115,10 +113,10 @@ fn topologicalSort(alloc: std.mem.Allocator, dag: *std.hash_map.AutoHashMap(Page
         }
         @panic("DAG not empty after Kahn's algorithm.");
     }
-    return sorted;
+    return sorted.toOwnedSlice();
 }
 
-fn subgraph(graph: std.hash_map.AutoHashMap(Page, std.ArrayList(Page)), report: []Page) !std.hash_map.AutoHashMap(Page, std.ArrayList(Page)) {
+fn subgraph(graph: *const std.hash_map.AutoHashMap(Page, std.ArrayList(Page)), report: []const Page) !std.hash_map.AutoHashMap(Page, std.ArrayList(Page)) {
     const alloc = graph.allocator;
     var subgraph_ = std.hash_map.AutoHashMap(Page, std.ArrayList(Page)).init(alloc);
     for (report) |page_from| {
@@ -135,6 +133,21 @@ fn subgraph(graph: std.hash_map.AutoHashMap(Page, std.ArrayList(Page)), report: 
         }
     }
     return subgraph_;
+}
+
+fn FixedBufferArrayList(comptime T: type, comptime capacity: usize) type {
+    return struct {
+        buffer: [capacity * @sizeOf(T)]u8,
+
+        pub fn init() @This() {
+            return @This(){ .buffer = undefined };
+        }
+
+        pub fn arrayList(self: *@This()) std.ArrayList(T) {
+            var fba = std.heap.FixedBufferAllocator.init(&self.buffer);
+            return std.ArrayList(T).initCapacity(fba.allocator(), capacity) catch unreachable;
+        }
+    };
 }
 
 fn debugPrintLn(comptime fmt: []const u8, args: anytype) void {
