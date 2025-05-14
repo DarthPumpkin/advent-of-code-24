@@ -140,7 +140,7 @@ fn FixedBufferArrayList(comptime T: type, comptime capacity: usize) type {
         buffer: [capacity * @sizeOf(T)]u8,
 
         pub fn init() @This() {
-            return @This(){ .buffer = undefined };
+            return .{ .buffer = undefined };
         }
 
         pub fn arrayList(self: *@This()) std.ArrayList(T) {
