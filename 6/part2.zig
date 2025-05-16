@@ -31,15 +31,41 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []u8) !Solution {
         if (!within_bounds)
             break;
     }
+    // For each of the previously visited locations, try adding an obstacle and check for cycle.
+    // Here, we can use a bit of an optimization: we don't have to move one step at a time anymore.
+    // We can zoom to the next obstacle. For this, we need a list of obstacles.
+    var obstacle_cols = try arena_alloc.alloc(std.ArrayList(usize), height);
+    var obstacle_rows = try arena_alloc.alloc(std.ArrayList(usize), width);
+    for (0..height) |i| {
+        obstacle_cols[i] = .init(arena_alloc);
+    }
+    for (0..width) |j| {
+        obstacle_rows[j] = .init(arena_alloc);
+    }
+    for (0..height) |i| {
+        for (0..width) |j| {
+            if (input_str[map_index.linearIndex(i, j).?] == '#') {
+                try obstacle_cols[i].append(j);
+                try obstacle_rows[j].append(i);
+            }
+        }
+    }
     var sum: usize = 0;
     for (0..height) |i| {
         for (0..width) |j| {
             if (visited[visited_index.linearIndex(i, j).?]) {
                 const symb = input_str[map_index.linearIndex(i, j).?];
                 if (symb == '.') {
-                    input_str[map_index.linearIndex(i, j).?] = '#';
-                    defer input_str[map_index.linearIndex(i, j).?] = '.';
-                    if (try hasCycle(arena_alloc, startState, input_str, map_index)) {
+                    // Temporarily add obstacle, then remove after check
+                    const j_insert = std.sort.lowerBound(usize, obstacle_cols[i].items, j, lessThan);
+                    try obstacle_cols[i].insert(j_insert, j);
+                    const i_insert = std.sort.lowerBound(usize, obstacle_rows[j].items, i, lessThan);
+                    try obstacle_rows[j].insert(i_insert, i);
+                    defer {
+                        _ = obstacle_cols[i].orderedRemove(j_insert);
+                        _ = obstacle_rows[j].orderedRemove(i_insert);
+                    }
+                    if (try hasCycle(arena_alloc, startState, obstacle_rows, obstacle_cols)) {
                         sum += 1;
                     }
                 }
@@ -49,15 +75,45 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []u8) !Solution {
     return sum;
 }
 
-fn hasCycle(allocator: std.mem.Allocator, start: State, map: []const u8, index: Index2D) !bool {
+fn hasCycle(allocator: std.mem.Allocator, start: State, obstacle_rows: []const std.ArrayList(usize), obstacle_cols: []const std.ArrayList(usize)) !bool {
     var visited = std.AutoHashMap(State, void).init(allocator);
     defer visited.deinit();
     var state = start;
     while (true) {
         try visited.put(state, {});
-        const within_bounds = step(&state, map, index);
-        if (!within_bounds)
-            return false;
+        switch (state.direction) {
+            .Up => {
+                const line = obstacle_rows[state.j].items;
+                const idx = std.sort.lowerBound(usize, line, state.i, lessThan);
+                if (idx == 0) // no obstacles ahead
+                    return false;
+                state.i = line[idx - 1] + 1;
+            },
+            .Down => {
+                const line = obstacle_rows[state.j].items;
+                const idx = std.sort.lowerBound(usize, line, state.i, lessThan);
+                if (idx == line.len) // no obstacles ahead
+                    return false;
+                state.i = line[idx] - 1;
+            },
+            .Left => {
+                const line = obstacle_cols[state.i].items;
+                const idx = std.sort.lowerBound(usize, line, state.j, lessThan);
+                if (idx == 0) { // no obstacles ahead
+                    return false;
+                }
+                state.j = line[idx - 1] + 1;
+            },
+            .Right => {
+                const line = obstacle_cols[state.i].items;
+                const idx = std.sort.lowerBound(usize, line, state.j, lessThan);
+                if (idx == line.len) { // no obstacles ahead
+                    return false;
+                }
+                state.j = line[idx] - 1;
+            },
+        }
+        state.direction = state.direction.turnRight();
         if (visited.get(state) != null)
             return true;
     }
@@ -147,6 +203,14 @@ const Index2D = struct {
         };
     }
 };
+
+fn lessThan(a: usize, b: usize) std.math.Order {
+    if (a < b)
+        return .lt;
+    if (a > b)
+        return .gt;
+    return .eq;
+}
 
 fn debugPrintLn(comptime fmt: []const u8, args: anytype) void {
     std.debug.print(fmt ++ "\n", args);
