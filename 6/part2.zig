@@ -5,7 +5,7 @@ const Solution = usize;
 
 const max_size = std.math.maxInt(usize);
 
-fn solve(base_alloc: std.mem.Allocator, input_str: []const u8) !Solution {
+fn solve(base_alloc: std.mem.Allocator, input_str: []u8) !Solution {
     var arena = std.heap.ArenaAllocator.init(base_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -17,27 +17,54 @@ fn solve(base_alloc: std.mem.Allocator, input_str: []const u8) !Solution {
     while (lines.next()) |_| {
         height += 1;
     }
-    const index = Index2D.initCustomStrides(height, width, width + 1, 1);
+    const map_index = Index2D.initCustomStrides(height, width, width + 1, 1);
     const startPosLin = std.mem.indexOfScalar(u8, input_str, '^').?;
     const startRow = startPosLin / (width + 1);
     const startCol = startPosLin % (width + 1);
-    var state = State{ .i = startRow, .j = startCol, .direction = .Up };
+    const startState = State{ .i = startRow, .j = startCol, .direction = .Up };
+    var state = startState;
     var visited = try arena_alloc.alloc(bool, width * height);
     const visited_index = Index2D.initRowMajor(height, width);
     while (true) {
         visited[visited_index.linearIndex(state.i, state.j).?] = true;
-        const within_bounds = step(&state, input_str, index);
+        const within_bounds = step(&state, input_str, map_index);
         if (!within_bounds)
             break;
     }
     var sum: usize = 0;
-    for (visited) |v| {
-        if (v)
-            sum += 1;
+    for (0..height) |i| {
+        for (0..width) |j| {
+            if (visited[visited_index.linearIndex(i, j).?]) {
+                const symb = input_str[map_index.linearIndex(i, j).?];
+                if (symb == '.') {
+                    input_str[map_index.linearIndex(i, j).?] = '#';
+                    defer input_str[map_index.linearIndex(i, j).?] = '.';
+                    if (try hasCycle(arena_alloc, startState, input_str, map_index)) {
+                        sum += 1;
+                    }
+                }
+            }
+        }
     }
     return sum;
 }
 
+fn hasCycle(allocator: std.mem.Allocator, start: State, map: []const u8, index: Index2D) !bool {
+    var visited = std.AutoHashMap(State, void).init(allocator);
+    defer visited.deinit();
+    var state = start;
+    while (true) {
+        try visited.put(state, {});
+        const within_bounds = step(&state, map, index);
+        if (!within_bounds)
+            return false;
+        if (visited.get(state) != null)
+            return true;
+    }
+}
+
+// Take a step. If the next location is within bounds, update the state.
+// Returns true if within bounds.
 fn step(state: *State, map: []const u8, index: Index2D) bool {
     const dir_vec = state.direction.asVector();
     const new_ii = @as(isize, @intCast(state.i)) + dir_vec[0];
@@ -57,7 +84,6 @@ fn step(state: *State, map: []const u8, index: Index2D) bool {
         '.', '^' => {
             state.i = new_i;
             state.j = new_j;
-            state.direction = state.direction;
         },
         else => unreachable,
     }
@@ -146,7 +172,7 @@ pub fn main() !void {
 }
 
 test "Example" {
-    const solution = 41;
+    const solution = 6;
     const example_file_name = "example.txt";
 
     const alloc = std.testing.allocator;
@@ -157,4 +183,12 @@ test "Example" {
     debugPrintLn("Example answer: {d}", .{sum});
 
     try std.testing.expectEqual(solution, sum);
+}
+
+test "AutoHashMap" {
+    var hm = std.AutoHashMap(State, bool).init(std.testing.allocator);
+    defer hm.deinit();
+    const state: State = .{ .i = 0, .j = 1, .direction = .Down };
+    try hm.put(state, true);
+    try std.testing.expectEqual(true, hm.get(state));
 }
