@@ -81,6 +81,7 @@ fn hasCycle(allocator: std.mem.Allocator, start: State, obstacle_rows: []const s
     var state = start;
     while (true) {
         try visited.put(state, {});
+        // Zoom to next obstacle (or out of bounds)
         switch (state.direction) {
             .Up => {
                 const line = obstacle_rows[state.j].items;
@@ -119,8 +120,8 @@ fn hasCycle(allocator: std.mem.Allocator, start: State, obstacle_rows: []const s
     }
 }
 
-// Take a step. If the next location is within bounds, update the state.
-// Returns true if within bounds.
+/// Take a step. If the next location is within bounds, update the state.
+/// Returns true if within bounds.
 fn step(state: *State, map: []const u8, index: Index2D) bool {
     const dir_vec = state.direction.asVector();
     const new_ii = @as(isize, @intCast(state.i)) + dir_vec[0];
@@ -205,11 +206,7 @@ const Index2D = struct {
 };
 
 fn lessThan(a: usize, b: usize) std.math.Order {
-    if (a < b)
-        return .lt;
-    if (a > b)
-        return .gt;
-    return .eq;
+    return std.math.order(a, b);
 }
 
 fn debugPrintLn(comptime fmt: []const u8, args: anytype) void {
@@ -249,10 +246,28 @@ test "Example" {
     try std.testing.expectEqual(solution, sum);
 }
 
-test "AutoHashMap" {
-    var hm = std.AutoHashMap(State, bool).init(std.testing.allocator);
-    defer hm.deinit();
-    const state: State = .{ .i = 0, .j = 1, .direction = .Down };
-    try hm.put(state, true);
-    try std.testing.expectEqual(true, hm.get(state));
+test "Benchmark" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
+    defer {
+        const deinit_status = gpa.deinit();
+        debugPrintLn("Memory check: {any}", .{deinit_status});
+    }
+
+    const tic = std.time.milliTimestamp();
+    const fileContent = try std.fs.cwd().readFileAlloc(alloc, "input.txt", max_size);
+    defer alloc.free(fileContent);
+
+    const tac = std.time.milliTimestamp();
+    defer {
+        const toc = std.time.milliTimestamp();
+        printLn("readFile took {d}ms", .{tac - tic}) catch {
+            debugPrintLn("Failed to print to stdout", .{});
+        };
+        printLn("solve took {d}ms", .{toc - tac}) catch {
+            debugPrintLn("Failed to print to stdout", .{});
+        };
+    }
+
+    _ = try solve(alloc, fileContent);
 }
