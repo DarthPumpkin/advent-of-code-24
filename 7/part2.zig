@@ -64,7 +64,6 @@ fn solveLineSmall(allocator: std.mem.Allocator, line: []const u8) !Solution {
 }
 
 fn solveLineFast(allocator: std.mem.Allocator, line: []const u8) !Solution {
-    const max_digits = 20; // number of digits of 2^64
     const rhs_numbers_hint = 12;
     var sides = std.mem.tokenizeSequence(u8, line, ": ");
     const lhs_str = sides.next().?;
@@ -78,6 +77,7 @@ fn solveLineFast(allocator: std.mem.Allocator, line: []const u8) !Solution {
         try rhs_numbers.append(rhs_number);
     }
     var candidates = std.ArrayList(Solution).init(allocator);
+    defer candidates.deinit();
     try candidates.append(rhs_numbers.items[0]);
     for (rhs_numbers.items[1..]) |next_number| {
         var new_candidates = std.ArrayList(Solution).init(allocator);
@@ -87,27 +87,33 @@ fn solveLineFast(allocator: std.mem.Allocator, line: []const u8) !Solution {
         }
         for (candidates.items) |candidate| {
             for (0..3) |op| {
-                const new_candidate = if (op == 2) op2: { // concatenate digits
-                    var ldigits_buf: [max_digits]u8 = undefined;
-                    var rdigits_buf: [max_digits]u8 = undefined;
-                    const llen = std.fmt.formatIntBuf(&ldigits_buf, candidate, 10, .lower, .{});
-                    const rlen = std.fmt.formatIntBuf(&rdigits_buf, next_number, 10, .lower, .{});
-                    std.mem.copyForwards(u8, ldigits_buf[llen..], rdigits_buf[0..rlen]);
-                    break :op2 try std.fmt.parseUnsigned(Solution, ldigits_buf[0 .. llen + rlen], 10);
-                } else if (op == 1)
+                const new_candidate = if (op == 2)
+                    try concatDigits(candidate, next_number)
+                else if (op == 1)
                     candidate * next_number
                 else
                     candidate + next_number;
-                if (new_candidate <= lhs) {
-                    try new_candidates.append(new_candidate);
+                // Optimization: we're doing the lowest op first, so we can break early if we're above
+                if (new_candidate > lhs)
+                    break;
+                if (new_candidate == lhs) {
+                    return lhs;
                 }
+                try new_candidates.append(new_candidate);
             }
         }
     }
-    return if (std.mem.indexOfScalar(Solution, candidates.items, lhs) != null)
-        lhs
-    else
-        0;
+    return 0;
+}
+
+fn concatDigits(lnum: usize, rnum: usize) !usize {
+    const log_r = std.math.log10_int(rnum);
+    // log10_int rounds down, but we want to round up.
+    var pow = try std.math.powi(usize, 10, log_r);
+    if (pow < rnum) {
+        pow *= 10;
+    }
+    return lnum * pow + rnum;
 }
 
 // Re-use from Day 5
