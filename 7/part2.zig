@@ -107,29 +107,9 @@ fn solveLineFast(allocator: std.mem.Allocator, line: []const u8) !Solution {
 const Op = enum { Add, Mult, Concat };
 
 fn concatDigits(lnum: Solution, rnum: Solution) !Solution {
-    const log_r = std.math.log10_int(rnum);
-    // log10_int rounds down, but we want to round up.
-    var pow = try std.math.powi(Solution, 10, log_r);
-    if (pow <= rnum) {
-        pow *= 10;
-    }
+    const log_r = std.math.log10_int(rnum) + 1;
+    const pow = try std.math.powi(Solution, 10, log_r);
     return lnum * pow + rnum;
-}
-
-// Re-use from Day 5
-fn FixedBufferArrayList(comptime T: type, comptime capacity: usize) type {
-    return struct {
-        buffer: [capacity * @sizeOf(T)]u8,
-
-        pub fn init() @This() {
-            return .{ .buffer = undefined };
-        }
-
-        pub fn arrayList(self: *@This()) std.ArrayList(T) {
-            var fba = std.heap.FixedBufferAllocator.init(&self.buffer);
-            return std.ArrayList(T).initCapacity(fba.allocator(), capacity) catch unreachable;
-        }
-    };
 }
 
 fn debugPrintLn(comptime fmt: []const u8, args: anytype) void {
