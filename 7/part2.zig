@@ -65,6 +65,7 @@ fn solveLineSmall(allocator: std.mem.Allocator, line: []const u8) !Solution {
 
 fn solveLineFast(allocator: std.mem.Allocator, line: []const u8) !Solution {
     const rhs_numbers_hint = 12;
+    const candidates_hint = 50;
     var sides = std.mem.tokenizeSequence(u8, line, ": ");
     const lhs_str = sides.next().?;
     const rhs_str = sides.next().?;
@@ -76,41 +77,40 @@ fn solveLineFast(allocator: std.mem.Allocator, line: []const u8) !Solution {
         const rhs_number = try std.fmt.parseUnsigned(Solution, rhs_number_str, 10);
         try rhs_numbers.append(rhs_number);
     }
-    var candidates = std.ArrayList(Solution).init(allocator);
+    var candidates = try std.ArrayList(Solution).initCapacity(allocator, candidates_hint);
     defer candidates.deinit();
+    var new_candidates = try std.ArrayList(Solution).initCapacity(allocator, candidates_hint);
+    defer new_candidates.deinit();
     try candidates.append(rhs_numbers.items[0]);
     for (rhs_numbers.items[1..]) |next_number| {
-        var new_candidates = std.ArrayList(Solution).init(allocator);
-        defer {
-            candidates.deinit();
-            candidates = new_candidates;
-        }
         for (candidates.items) |candidate| {
-            for (0..3) |op| {
-                const new_candidate = if (op == 2)
-                    try concatDigits(candidate, next_number)
-                else if (op == 1)
-                    candidate * next_number
-                else
-                    candidate + next_number;
-                // Optimization: we're doing the lowest op first, so we can break early if we're above
-                if (new_candidate > lhs)
-                    break;
-                if (new_candidate == lhs) {
-                    return lhs;
+            inline for (comptime std.enums.values(Op)) |op| {
+                const new_candidate = switch (op) {
+                    .Add => candidate + next_number,
+                    .Mult => candidate * next_number,
+                    .Concat => try concatDigits(candidate, next_number),
+                };
+
+                if (new_candidate <= lhs) {
+                    try new_candidates.append(new_candidate);
                 }
-                try new_candidates.append(new_candidate);
             }
         }
+        std.mem.swap(std.ArrayList(Solution), &candidates, &new_candidates);
+        new_candidates.clearRetainingCapacity();
     }
+    if (std.mem.indexOfScalar(Solution, candidates.items, lhs) != null)
+        return lhs;
     return 0;
 }
 
-fn concatDigits(lnum: usize, rnum: usize) !usize {
+const Op = enum { Add, Mult, Concat };
+
+fn concatDigits(lnum: Solution, rnum: Solution) !Solution {
     const log_r = std.math.log10_int(rnum);
     // log10_int rounds down, but we want to round up.
-    var pow = try std.math.powi(usize, 10, log_r);
-    if (pow < rnum) {
+    var pow = try std.math.powi(Solution, 10, log_r);
+    if (pow <= rnum) {
         pow *= 10;
     }
     return lnum * pow + rnum;
@@ -193,4 +193,11 @@ test "Benchmark" {
     }
 
     _ = try solve(alloc, fileContent);
+}
+
+test "concatDigits" {
+    try std.testing.expectEqual(1210, concatDigits(12, 10));
+    try std.testing.expectEqual(9899, concatDigits(98, 99));
+    try std.testing.expectEqual(11, concatDigits(1, 1));
+    try std.testing.expectEqual(7, concatDigits(0, 7));
 }
