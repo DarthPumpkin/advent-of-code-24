@@ -137,17 +137,17 @@ test "Benchmark" {
         debugPrintLn("Memory check: {any}", .{deinit_status});
     }
 
-    const tic = std.time.milliTimestamp();
+    const tic = std.time.microTimestamp();
     const fileContent = try std.fs.cwd().readFileAlloc(alloc, "input.txt", max_size);
     defer alloc.free(fileContent);
 
-    const tac = std.time.milliTimestamp();
+    const tac = std.time.microTimestamp();
     defer {
-        const toc = std.time.milliTimestamp();
-        printLn("readFile took {d}ms", .{tac - tic}) catch {
+        const toc = std.time.microTimestamp();
+        printLn("readFile took {d}μs", .{tac - tic}) catch {
             debugPrintLn("Failed to print to stdout", .{});
         };
-        printLn("solve took {d}ms", .{toc - tac}) catch {
+        printLn("solve took {d}μs", .{toc - tac}) catch {
             debugPrintLn("Failed to print to stdout", .{});
         };
     }
